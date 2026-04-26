@@ -1,0 +1,40 @@
+{
+  "name": "next-address-server-js",
+  "version": "0.1.0",
+  "description": "Secure server-side SDK for integrating with next-address-primary (REST + webhooks).",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=18.17.0"
+  },
+  "scripts": {
+    "build": "tsc",
+    "prepublishOnly": "npm run build",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [
+    "next-address",
+    "webhook",
+    "address",
+    "contacts"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/your-org/next-address-server-js.git"
+  },
+  "devDependencies": {
+    "@types/node": "^22.9.0",
+    "typescript": "^5.6.3"
+  }
+}
