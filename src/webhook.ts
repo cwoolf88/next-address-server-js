@@ -1,6 +1,12 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { WebhookVerificationError } from "./errors.js";
-import type { ContactChangeWebhookEvent, VerifiedWebhookPayload } from "./types.js";
+import type {
+  AnyVerifiedWebhookPayload,
+  ContactChangeWebhookEvent,
+  ContactUpdateReviewedEvent,
+  OutboundWebhookEvent,
+  VerifiedWebhookPayload,
+} from "./types.js";
 
 const SIGNATURE_HEADER = "x-next-address-signature";
 const TIMESTAMP_HEADER = "x-next-address-timestamp";
@@ -47,6 +53,37 @@ export function verifyWebhookSignature(
   }
 }
 
+const KINDS = new Set(["address", "phone", "name", "email"]);
+
+function parseBaseFields(data: Record<string, unknown>): {
+  occurredAt: string;
+  tenantId: string;
+  externalUserId: string;
+  kind: ContactChangeWebhookEvent["kind"];
+  correlationId: string | undefined;
+} {
+  if (typeof data.tenantId !== "string" || data.tenantId.length === 0) {
+    throw new WebhookVerificationError("Missing tenantId");
+  }
+  if (typeof data.externalUserId !== "string" || data.externalUserId.length === 0) {
+    throw new WebhookVerificationError("Missing externalUserId");
+  }
+  const kind = data.kind;
+  if (typeof kind !== "string" || !KINDS.has(kind)) {
+    throw new WebhookVerificationError("Invalid or missing kind");
+  }
+  if (typeof data.occurredAt !== "string") {
+    throw new WebhookVerificationError("Missing occurredAt");
+  }
+  return {
+    occurredAt: data.occurredAt,
+    tenantId: data.tenantId,
+    externalUserId: data.externalUserId,
+    kind: kind as ContactChangeWebhookEvent["kind"],
+    correlationId: typeof data.correlationId === "string" ? data.correlationId : undefined,
+  };
+}
+
 /**
  * Parse and lightly validate JSON after signature verification.
  */
@@ -64,30 +101,81 @@ export function parseContactWebhookPayload(json: string): VerifiedWebhookPayload
   if (event !== "contact.changed") {
     throw new WebhookVerificationError(`Unsupported event: ${String(event)}`, "WEBHOOK_UNSUPPORTED_EVENT");
   }
-  if (typeof data.tenantId !== "string" || data.tenantId.length === 0) {
-    throw new WebhookVerificationError("Missing tenantId");
-  }
-  if (typeof data.externalUserId !== "string" || data.externalUserId.length === 0) {
-    throw new WebhookVerificationError("Missing externalUserId");
-  }
-  const kind = data.kind;
-  const allowed = new Set(["address", "phone", "name", "email"]);
-  if (typeof kind !== "string" || !allowed.has(kind)) {
-    throw new WebhookVerificationError("Invalid or missing kind");
-  }
-  if (typeof data.occurredAt !== "string") {
-    throw new WebhookVerificationError("Missing occurredAt");
-  }
+  const base = parseBaseFields(data);
+  const pickStr = (k: string) => (typeof data[k] === "string" ? (data[k] as string) : undefined);
   const out: ContactChangeWebhookEvent = {
     event: "contact.changed",
-    occurredAt: data.occurredAt,
-    tenantId: data.tenantId,
-    externalUserId: data.externalUserId,
-    kind: kind as ContactChangeWebhookEvent["kind"],
-    correlationId: typeof data.correlationId === "string" ? data.correlationId : undefined,
+    occurredAt: base.occurredAt,
+    tenantId: base.tenantId,
+    externalUserId: base.externalUserId,
+    kind: base.kind,
+    correlationId: base.correlationId,
     address: isRecord(data.address) ? normalizeAddress(data.address) : undefined,
+    email: pickStr("email"),
+    phone: pickStr("phone"),
+    firstName: pickStr("firstName"),
+    lastName: pickStr("lastName"),
   };
   return out;
+}
+
+/**
+ * After signature verification, parse a supported primary→tenant event.
+ * Supports `contact.changed` and `contact.update.reviewed`.
+ */
+export function parseWebhookEvent(json: string): OutboundWebhookEvent {
+  let data: unknown;
+  try {
+    data = JSON.parse(json);
+  } catch {
+    throw new WebhookVerificationError("Invalid JSON body", "WEBHOOK_INVALID_JSON");
+  }
+  if (!isRecord(data)) {
+    throw new WebhookVerificationError("Webhook body must be an object");
+  }
+  const event = data.event;
+  if (event === "contact.changed") {
+    return parseContactWebhookPayload(json);
+  }
+  if (event === "contact.update.reviewed") {
+    if (data.status !== "approved" && data.status !== "rejected") {
+      throw new WebhookVerificationError("Invalid or missing status on review event");
+    }
+    const base = parseBaseFields(data);
+    const out: ContactUpdateReviewedEvent = {
+      event: "contact.update.reviewed",
+      occurredAt: base.occurredAt,
+      tenantId: base.tenantId,
+      externalUserId: base.externalUserId,
+      kind: base.kind,
+      status: data.status,
+      correlationId: base.correlationId,
+      address: isRecord(data.address) ? normalizeAddress(data.address) : undefined,
+      email: typeof data.email === "string" ? data.email : undefined,
+      phone: typeof data.phone === "string" ? data.phone : undefined,
+      firstName: typeof data.firstName === "string" ? data.firstName : undefined,
+      lastName: typeof data.lastName === "string" ? data.lastName : undefined,
+    };
+    return out;
+  }
+  throw new WebhookVerificationError(
+    `Unsupported event: ${String(event)}`,
+    "WEBHOOK_UNSUPPORTED_EVENT"
+  );
+}
+
+/**
+ * Verify HMAC then parse any supported outbound event (changed + review).
+ */
+export function verifyAndParseAnyWebhook(
+  rawBody: string | Buffer,
+  headers: Record<string, string | string[] | undefined>,
+  secret: string,
+  options?: { toleranceSeconds?: number }
+): AnyVerifiedWebhookPayload {
+  verifyWebhookSignature(rawBody, headers, secret, options);
+  const str = typeof rawBody === "string" ? rawBody : rawBody.toString("utf8");
+  return parseWebhookEvent(str);
 }
 
 /**

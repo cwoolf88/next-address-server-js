@@ -28,6 +28,8 @@ export interface AddressPayload {
 }
 
 /** Webhook event envelope from next-address-primary → 3rd party. */
+export type OutboundWebhookEvent = ContactChangeWebhookEvent | ContactUpdateReviewedEvent;
+
 export interface ContactChangeWebhookEvent {
   /** Event name for routing/versioning */
   event: "contact.changed";
@@ -40,12 +42,41 @@ export interface ContactChangeWebhookEvent {
   kind: ContactChangeKind;
   /** Present when kind === "address"; other kinds add their own payloads later */
   address?: AddressPayload;
+  email?: string;
+  phone?: string;
+  firstName?: string;
+  lastName?: string;
   /** Primary may include correlation / audit ids */
   correlationId?: string;
 }
 
-/** Result of verifying a raw webhook body */
+/**
+ * Fired (to the origin tenant) when a non-certified contact update is approved
+ * or rejected in next-address-primary.
+ */
+export type ContactUpdateReviewStatus = "approved" | "rejected";
+
+export interface ContactUpdateReviewedEvent {
+  event: "contact.update.reviewed";
+  occurredAt: string;
+  tenantId: TenantId;
+  externalUserId: ExternalUserId;
+  kind: ContactChangeKind;
+  status: ContactUpdateReviewStatus;
+  /** Echo of the end-user’s decision; included for observability. */
+  correlationId?: string;
+  address?: AddressPayload;
+  email?: string;
+  phone?: string;
+  firstName?: string;
+  lastName?: string;
+}
+
+/** Result of verifying a raw `contact.changed` body */
 export type VerifiedWebhookPayload = ContactChangeWebhookEvent;
+
+/** `contact.changed` and `contact.update.reviewed` (same signing scheme) */
+export type AnyVerifiedWebhookPayload = OutboundWebhookEvent;
 
 /** Update sent from 3rd party → primary */
 export interface ContactUpdateRequest {
@@ -53,6 +84,11 @@ export interface ContactUpdateRequest {
   externalUserId: ExternalUserId;
   kind: ContactChangeKind;
   address?: AddressPayload;
+  email?: string;
+  phone?: string;
+  firstName?: string;
+  lastName?: string;
+  middleInitial?: string;
 }
 
 /**
@@ -67,6 +103,24 @@ export type ContactUpdateProcessingStatus =
 export interface ContactUpdateResponseBody {
   status: ContactUpdateProcessingStatus;
   /** Human-readable detail when rejected or pending */
+  message?: string;
+  correlationId?: string;
+}
+
+/** Enable a tenant's integration with next-address-primary. */
+export interface TenantConnectRequest {
+  tenantId: TenantId;
+}
+
+/** Disable a tenant's integration with next-address-primary. */
+export interface TenantDisconnectRequest {
+  tenantId: TenantId;
+}
+
+export type TenantConnectionStatus = "connected" | "disconnected";
+
+export interface TenantConnectionResponseBody {
+  status: TenantConnectionStatus;
   message?: string;
   correlationId?: string;
 }

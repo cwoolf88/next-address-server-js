@@ -2,6 +2,9 @@ import { NextAddressError } from "./errors.js";
 import type {
   ContactUpdateRequest,
   ContactUpdateResponseBody,
+  TenantConnectRequest,
+  TenantConnectionResponseBody,
+  TenantDisconnectRequest,
 } from "./types.js";
 
 export interface NextAddressClientOptions {
@@ -57,13 +60,63 @@ export class NextAddressClient {
   }
 
   /**
-   * POST contact update. Default path `/api/v1/contacts/update` — change if primary uses another route.
+   * PATCH contact update. Default path `/api/v1/contacts/update` — change if primary uses another route.
    */
   async submitContactUpdate(
     body: ContactUpdateRequest,
     init?: { idempotencyKey?: string; path?: string }
   ): Promise<ContactUpdateResponseBody> {
-    const path = init?.path ?? "/api/v1/contacts/update";
+    return this.requestJson("PATCH", init?.path ?? "/api/v1/contacts/update", body, init, (parsed) => ({
+      status: parsed.status as ContactUpdateResponseBody["status"],
+      message: typeof parsed.message === "string" ? parsed.message : undefined,
+      correlationId:
+        typeof parsed.correlationId === "string" ? parsed.correlationId : undefined,
+    }));
+  }
+
+  /**
+   * POST tenant connect. Default path `/api/v1/tenants/connect` — change if primary uses another route.
+   */
+  async connectTenant(
+    body: TenantConnectRequest,
+    init?: { idempotencyKey?: string; path?: string }
+  ): Promise<TenantConnectionResponseBody> {
+    return this.requestJson("POST", init?.path ?? "/api/v1/tenants/connect", body, init, (parsed) => ({
+      status: parsed.status as TenantConnectionResponseBody["status"],
+      message: typeof parsed.message === "string" ? parsed.message : undefined,
+      correlationId:
+        typeof parsed.correlationId === "string" ? parsed.correlationId : undefined,
+    }));
+  }
+
+  /**
+   * POST tenant disconnect. Default path `/api/v1/tenants/disconnect` — change if primary uses another route.
+   */
+  async disconnectTenant(
+    body: TenantDisconnectRequest,
+    init?: { idempotencyKey?: string; path?: string }
+  ): Promise<TenantConnectionResponseBody> {
+    return this.requestJson(
+      "POST",
+      init?.path ?? "/api/v1/tenants/disconnect",
+      body,
+      init,
+      (parsed) => ({
+        status: parsed.status as TenantConnectionResponseBody["status"],
+        message: typeof parsed.message === "string" ? parsed.message : undefined,
+        correlationId:
+          typeof parsed.correlationId === "string" ? parsed.correlationId : undefined,
+      })
+    );
+  }
+
+  private async requestJson<T>(
+    method: "PATCH" | "POST",
+    path: string,
+    body: unknown,
+    init: { idempotencyKey?: string } | undefined,
+    mapResponse: (parsed: Record<string, unknown>) => T
+  ): Promise<T> {
     const url = `${this.baseUrl}${path.startsWith("/") ? path : `/${path}`}`;
     const controller = new AbortController();
     const t = setTimeout(() => controller.abort(), this.timeoutMs);
@@ -76,7 +129,7 @@ export class NextAddressClient {
     }
     try {
       const res = await this.fetchImpl(url, {
-        method: "POST",
+        method,
         headers,
         body: JSON.stringify(body),
         signal: controller.signal,
@@ -99,12 +152,7 @@ export class NextAddressClient {
       if (!isRecord(parsed) || typeof parsed.status !== "string") {
         throw new NextAddressError("Response missing status", "BAD_RESPONSE", res.status, parsed);
       }
-      return {
-        status: parsed.status as ContactUpdateResponseBody["status"],
-        message: typeof parsed.message === "string" ? parsed.message : undefined,
-        correlationId:
-          typeof parsed.correlationId === "string" ? parsed.correlationId : undefined,
-      };
+      return mapResponse(parsed);
     } catch (e) {
       if (e instanceof NextAddressError) throw e;
       if (e instanceof Error && e.name === "AbortError") {
