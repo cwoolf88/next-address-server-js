@@ -40,19 +40,16 @@ function renderConnectionGhost(section: HTMLElement): void {
   copy.appendChild(ghostLine("na-widget__ghost-line--title"));
   copy.appendChild(ghostLine("na-widget__ghost-line--subtitle"));
   top.appendChild(copy);
-  const headerActions = el("div", "na-widget__header-actions");
   const slot = el("div", "na-widget__link-status-slot");
   slot.appendChild(el("div", "na-widget__ghost-icon"));
-  headerActions.appendChild(slot);
-  headerActions.appendChild(el("div", "na-widget__ghost-icon"));
-  top.appendChild(headerActions);
+  top.appendChild(slot);
   header.appendChild(top);
   header.appendChild(el("div", "na-widget__ghost-pill"));
   ghost.appendChild(header);
 
-  const actions = el("div", "na-widget__ghost-actions");
-  actions.appendChild(el("div", "na-widget__ghost-btn"));
-  ghost.appendChild(actions);
+  const footer = el("div", "na-widget__ghost-footer");
+  footer.appendChild(el("div", "na-widget__ghost-btn"));
+  ghost.appendChild(footer);
 
   section.appendChild(ghost);
 
@@ -296,12 +293,7 @@ export function renderConnectionSection(
 
   const linkSlot = el("div", "na-widget__link-status-slot");
   appendLinkStatusIcon(linkSlot, view, info.mockMode);
-  const headerActions = el("div", "na-widget__header-actions");
-  headerActions.appendChild(linkSlot);
-  if (info.primaryBaseUrl && !info.mockMode) {
-    appendSettingsButton(headerActions, view, actions.onOpenSettings);
-  }
-  top.appendChild(headerActions);
+  top.appendChild(linkSlot);
   header.appendChild(top);
 
   if (!info.mockMode && view.signedIntoPrimary) {
@@ -318,6 +310,7 @@ export function renderConnectionSection(
     section.appendChild(el("p", "na-widget__error", view.error));
   }
 
+  const footer = el("div", "na-widget__footer");
   const actionsRow = el("div", "na-widget__actions");
 
   if (view.linked) {
@@ -351,7 +344,14 @@ export function renderConnectionSection(
     }
   }
 
-  section.appendChild(actionsRow);
+  footer.appendChild(actionsRow);
+
+  if (info.primaryBaseUrl && !info.mockMode) {
+    appendSettingsButton(footer, view, actions.onOpenSettings);
+  }
+
+  section.appendChild(footer);
+
   host.replaceChildren(section);
 }
 

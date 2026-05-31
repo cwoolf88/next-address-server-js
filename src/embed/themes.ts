@@ -110,7 +110,7 @@ const WARM_NEUTRAL: WidgetPalette = {
   badgeInfoBg: "#e0f2fe",
   badgeInfoText: "#075985",
   badgeSuccessBg: "#d1fae5",
-  badgeSuccessText: "#34a574",
+  badgeSuccessText: "#065f46",
   btnPrimaryBg: "#0d9488",
   btnPrimaryHover: "#0f766e",
   btnPrimaryText: "#ffffff",

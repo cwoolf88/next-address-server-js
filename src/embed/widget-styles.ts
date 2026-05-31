@@ -25,7 +25,7 @@ export const WIDGET_CSS = `
   --na-badge-info-bg: #e0f2fe;
   --na-badge-info-text: #075985;
   --na-badge-success-bg: #d1fae5;
-  --na-badge-success-text: #34a574;
+  --na-badge-success-text: #065f46;
   --na-btn-primary-bg: #0d9488;
   --na-btn-primary-hover: #0f766e;
   --na-btn-primary-text: #ffffff;
@@ -71,6 +71,11 @@ export const WIDGET_CSS = `
   backdrop-filter: blur(var(--na-widget-backdrop-blur));
 }
 .na-widget__connection + .na-widget__sync { margin-top: 1rem; }
+.na-widget__connection {
+  display: flex;
+  flex-direction: column;
+  gap: 0.875rem;
+}
 .na-widget__header {
   display: flex;
   flex-direction: column;
@@ -91,13 +96,8 @@ export const WIDGET_CSS = `
   width: 1.75rem;
   height: 1.75rem;
 }
-.na-widget__header-actions {
-  display: flex;
-  flex-shrink: 0;
-  align-items: center;
-  gap: 0.375rem;
-}
 .na-widget__settings-btn {
+  flex-shrink: 0;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -167,6 +167,17 @@ export const WIDGET_CSS = `
 .na-widget__badge--signed-in {
   background: var(--na-badge-info-bg);
   color: var(--na-badge-info-text);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.na-widget__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-top: 0.125rem;
 }
 .na-widget__link-status {
   position: relative;
@@ -253,7 +264,15 @@ export const WIDGET_CSS = `
   opacity: 1;
 }
 .na-widget__error { margin: 0.75rem 0 0; color: var(--na-error); }
-.na-widget__actions { margin-top: 1rem; }
+.na-widget__actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.5rem;
+  flex: 1;
+  min-width: 0;
+  margin-top: 0;
+}
 .na-widget__btn {
   appearance: none;
   border-radius: calc(var(--na-widget-radius) * 0.75);
@@ -394,7 +413,12 @@ export const WIDGET_CSS = `
   height: 1.75rem;
   border-radius: 9999px;
 }
-.na-widget__ghost-actions { margin-top: 1rem; }
+.na-widget__ghost-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 0.875rem;
+}
 .na-widget__ghost-btn {
   width: 7.5rem;
   height: 2.375rem;
