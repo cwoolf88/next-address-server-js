@@ -1,5 +1,7 @@
 import { NextAddressError } from "./errors.js";
 import type {
+  ContactSaveResult,
+  ContactUpdateQueueResponseBody,
   ContactUpdateRequest,
   ContactUpdateResponseBody,
   TenantConnectRequest,
@@ -60,9 +62,27 @@ export class NextAddressClient {
   }
 
   /**
-   * PATCH contact update. Default path `/api/v1/contacts/update` — change if primary uses another route.
+   * Save contact info to next-address-primary. On transient failure, enqueues for
+   * primary to process twice daily, on restart, or when drained manually.
    */
-  async submitContactUpdate(
+  async saveContactInfo(
+    body: ContactUpdateRequest,
+    init?: { idempotencyKey?: string; path?: string; queuePath?: string }
+  ): Promise<ContactSaveResult> {
+    try {
+      return await this.submitContactUpdate(body, init);
+    } catch (e) {
+      const err = e instanceof NextAddressError ? e : toTransportError(e);
+      if (!isQueueableContactUpdateError(err)) throw err;
+      return this.enqueueContactUpdate(body, {
+        idempotencyKey: init?.idempotencyKey,
+        path: init?.queuePath,
+      });
+    }
+  }
+
+  /** PATCH live contact update. */
+  private async submitContactUpdate(
     body: ContactUpdateRequest,
     init?: { idempotencyKey?: string; path?: string }
   ): Promise<ContactUpdateResponseBody> {
@@ -72,6 +92,26 @@ export class NextAddressClient {
       correlationId:
         typeof parsed.correlationId === "string" ? parsed.correlationId : undefined,
     }));
+  }
+
+  /** POST deferred contact update for primary's queue drain. */
+  private async enqueueContactUpdate(
+    body: ContactUpdateRequest,
+    init?: { idempotencyKey?: string; path?: string }
+  ): Promise<ContactUpdateQueueResponseBody> {
+    return this.requestJson(
+      "POST",
+      init?.path ?? "/api/v1/contacts/update/queue",
+      body,
+      init,
+      (parsed) => ({
+        status: "queued",
+        queueId: typeof parsed.queueId === "string" ? parsed.queueId : undefined,
+        message: typeof parsed.message === "string" ? parsed.message : undefined,
+        correlationId:
+          typeof parsed.correlationId === "string" ? parsed.correlationId : undefined,
+      })
+    );
   }
 
   /**
@@ -167,4 +207,18 @@ export class NextAddressClient {
 
 function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
+}
+
+function toTransportError(e: unknown): NextAddressError {
+  if (e instanceof Error) {
+    return new NextAddressError(e.message, "TRANSPORT_ERROR");
+  }
+  return new NextAddressError("Request failed", "TRANSPORT_ERROR");
+}
+
+function isQueueableContactUpdateError(error: NextAddressError): boolean {
+  if (error.code === "TIMEOUT" || error.code === "TRANSPORT_ERROR") return true;
+  if (error.code === "HTTP_ERROR" && error.status != null && error.status >= 500) return true;
+  if (error.code === "HTTP_ERROR" && error.status === 429) return true;
+  return false;
 }

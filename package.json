@@ -10,6 +10,23 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./ui": {
+      "types": "./dist/ui/index.d.ts",
+      "import": "./dist/ui/index.js"
+    },
+    "./embed": {
+      "types": "./dist/embed/index.d.ts",
+      "import": "./dist/embed/index.js"
+    },
+    "./embed/widget.css": "./dist/embed/widget.css"
+  },
+  "peerDependencies": {
+    "react": ">=18"
+  },
+  "peerDependenciesMeta": {
+    "react": {
+      "optional": true
     }
   },
   "files": [
@@ -19,7 +36,7 @@
     "node": ">=18.17.0"
   },
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && cp src/embed/widget.css dist/embed/widget.css",
     "prepublishOnly": "npm run build",
     "typecheck": "tsc --noEmit"
   },
@@ -35,6 +52,8 @@
   },
   "devDependencies": {
     "@types/node": "^22.9.0",
+    "@types/react": "^19.0.0",
+    "react": "^19.0.0",
     "typescript": "^5.6.3"
   }
 }

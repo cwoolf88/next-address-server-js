@@ -3,7 +3,9 @@ export type {
   AnyVerifiedWebhookPayload,
   ContactChangeKind,
   ContactChangeWebhookEvent,
+  ContactSaveResult,
   ContactUpdateProcessingStatus,
+  ContactUpdateQueueResponseBody,
   ContactUpdateRequest,
   ContactUpdateResponseBody,
   ContactUpdateReviewedEvent,
@@ -17,6 +19,15 @@ export type {
   TenantId,
   VerifiedWebhookPayload,
 } from "./types.js";
+
+export {
+  contactSyncStateFromError,
+  contactSyncStateFromPrimaryBatch,
+  contactSyncStateFromSaveResult,
+  getPrimaryErrorMessage,
+  isPrimaryClientError,
+  type ContactSyncDisplayState,
+} from "./sync.js";
 
 export { NextAddressClient, type NextAddressClientOptions } from "./client.js";
 export {

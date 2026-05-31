@@ -107,6 +107,21 @@ export interface ContactUpdateResponseBody {
   correlationId?: string;
 }
 
+/**
+ * Accepted into next-address-primary's deferred contact-update queue.
+ * Primary drains the queue twice daily, on restart, and when triggered manually.
+ */
+export interface ContactUpdateQueueResponseBody {
+  status: "queued";
+  /** Primary-assigned queue item id, when provided */
+  queueId?: string;
+  message?: string;
+  correlationId?: string;
+}
+
+/** Result of saving contact info: applied live or deferred to primary's queue. */
+export type ContactSaveResult = ContactUpdateResponseBody | ContactUpdateQueueResponseBody;
+
 /** Enable a tenant's integration with next-address-primary. */
 export interface TenantConnectRequest {
   tenantId: TenantId;
