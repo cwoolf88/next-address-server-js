@@ -1,11 +1,9 @@
 /**
- * Tenant boundary for multi-tenant primary deployments.
- * Mapping from (tenantId, externalUserId) to the primary user lives only on next-address-primary.
- */
-export type TenantId = string;
-
-/**
  * User identifier on the 3rd-party system. Never send next-address-primary internal user IDs here.
+ *
+ * For browser connect/disconnect URLs, mint an opaque token via POST /api/v1/direct-connect-tokens, or sign
+ * with encodeExternalUserId (api key prefix + user id only — no tenant id).
+ * For REST/webhooks, pass your product's raw user id; primary resolves tenant from your API key.
  */
 export type ExternalUserId = string;
 
@@ -35,8 +33,7 @@ export interface ContactChangeWebhookEvent {
   event: "contact.changed";
   /** ISO 8601 when primary emitted the event */
   occurredAt: string;
-  tenantId: TenantId;
-  /** 3rd-party user id; primary resolves linkage server-side */
+  /** 3rd-party user id; primary resolves connection server-side */
   externalUserId: ExternalUserId;
   /** What changed; future kinds reuse this envelope */
   kind: ContactChangeKind;
@@ -59,7 +56,6 @@ export type ContactUpdateReviewStatus = "approved" | "rejected";
 export interface ContactUpdateReviewedEvent {
   event: "contact.update.reviewed";
   occurredAt: string;
-  tenantId: TenantId;
   externalUserId: ExternalUserId;
   kind: ContactChangeKind;
   status: ContactUpdateReviewStatus;
@@ -80,7 +76,6 @@ export type AnyVerifiedWebhookPayload = OutboundWebhookEvent;
 
 /** Update sent from 3rd party → primary */
 export interface ContactUpdateRequest {
-  tenantId: TenantId;
   externalUserId: ExternalUserId;
   kind: ContactChangeKind;
   address?: AddressPayload;
@@ -107,30 +102,22 @@ export interface ContactUpdateResponseBody {
   correlationId?: string;
 }
 
-/**
- * Accepted into next-address-primary's deferred contact-update queue.
- * Primary drains the queue twice daily, on restart, and when triggered manually.
- */
 export interface ContactUpdateQueueResponseBody {
   status: "queued";
-  /** Primary-assigned queue item id, when provided */
   queueId?: string;
   message?: string;
   correlationId?: string;
 }
 
-/** Result of saving contact info: applied live or deferred to primary's queue. */
-export type ContactSaveResult = ContactUpdateResponseBody | ContactUpdateQueueResponseBody;
+export type ContactSaveResult =
+  | ContactUpdateResponseBody
+  | ContactUpdateQueueResponseBody;
 
-/** Enable a tenant's integration with next-address-primary. */
-export interface TenantConnectRequest {
-  tenantId: TenantId;
-}
+/** Tenant is inferred from the Bearer API key — body may be empty. */
+export type TenantConnectRequest = Record<string, never>;
 
-/** Disable a tenant's integration with next-address-primary. */
-export interface TenantDisconnectRequest {
-  tenantId: TenantId;
-}
+/** Tenant is inferred from the Bearer API key — body may be empty. */
+export type TenantDisconnectRequest = Record<string, never>;
 
 export type TenantConnectionStatus = "connected" | "disconnected";
 
@@ -139,3 +126,82 @@ export interface TenantConnectionResponseBody {
   message?: string;
   correlationId?: string;
 }
+
+export interface MintDirectConnectTokenRequest {
+  externalUserId: ExternalUserId;
+}
+
+export interface MintDirectConnectTokenResponseBody {
+  linkToken: string;
+  expiresAt: string;
+}
+
+/** Active 24-hour address-change security hold on next-address-primary. */
+export type AddressChangeHoldStatus = {
+  id: string;
+  reason: string;
+  reasonLabel: string;
+  clientIp: string | null;
+  clientLocationLabel: string | null;
+  pausedUntil: string;
+  reverifiedAt: string | null;
+  isBlocking: boolean;
+  requiresReverification: boolean;
+  waitingForCooldown: boolean;
+  tenantId: string | null;
+  contactQueueId: string | null;
+};
+
+export type AddressChangeSecurityBlockCode =
+  | "address_changes_paused"
+  | "suspicious_ip_hold_created";
+
+export interface SimulateAddressChangeSecurityEventRequest {
+  externalUserId: ExternalUserId;
+}
+
+export type SimulateAddressChangeSecurityEventStatus = "hold_created" | "already_paused";
+
+export interface SimulateAddressChangeSecurityEventResponse {
+  status: SimulateAddressChangeSecurityEventStatus;
+  code: AddressChangeSecurityBlockCode;
+  message: string;
+  hold: AddressChangeHoldStatus;
+}
+
+/** Who should fail on the next address/contact sync attempt. */
+export type AddressUpdateFailureSource = "merchant" | "nextaddress";
+
+export interface SimulateFailedAddressUpdateRequest {
+  externalUserId: ExternalUserId;
+  source: AddressUpdateFailureSource;
+}
+
+export interface SimulateFailedAddressUpdateResponse {
+  status: "armed";
+  source: AddressUpdateFailureSource;
+  message: string;
+}
+
+import type { IntegrationSimulationScenario } from "./simulation-scenarios.js";
+
+export type { IntegrationSimulationScenario };
+
+export interface ArmIntegrationSimulationRequest {
+  externalUserId: ExternalUserId;
+  scenario: IntegrationSimulationScenario;
+}
+
+export type ArmIntegrationSimulationResponse =
+  | {
+      status: "armed";
+      scenario: IntegrationSimulationScenario;
+      message: string;
+      hint: string;
+    }
+  | {
+      status: "applied";
+      scenario: "security_hold";
+      message: string;
+      hold: AddressChangeHoldStatus;
+    };

@@ -47,7 +47,7 @@ export function NextAddressSyncCard({
   if (state.status === "syncing") {
     return (
       <div className={className} style={cardStyle} role="status" aria-live="polite">
-        <p style={{ margin: "0 0 8px", fontWeight: 600 }}>Syncing with NextAddress…</p>
+        <p style={{ margin: 0, fontWeight: 600 }}>Syncing with NextAddress…</p>
       </div>
     );
   }
@@ -55,7 +55,7 @@ export function NextAddressSyncCard({
   if (state.status === "synced") {
     return (
       <div className={className} style={cardStyle} role="status">
-        <p style={{ margin: "0 0 8px", fontWeight: 600 }}>Synced with NextAddress</p>
+        <p style={{ margin: 0, fontWeight: 600 }}>Synced with NextAddress</p>
       </div>
     );
   }

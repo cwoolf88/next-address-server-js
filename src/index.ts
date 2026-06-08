@@ -1,39 +1,50 @@
 export type {
+  AddressChangeHoldStatus,
+  AddressChangeSecurityBlockCode,
+  AddressUpdateFailureSource,
   AddressPayload,
   AnyVerifiedWebhookPayload,
   ContactChangeKind,
   ContactChangeWebhookEvent,
-  ContactSaveResult,
   ContactUpdateProcessingStatus,
-  ContactUpdateQueueResponseBody,
   ContactUpdateRequest,
+  ContactUpdateQueueResponseBody,
   ContactUpdateResponseBody,
   ContactUpdateReviewedEvent,
   ContactUpdateReviewStatus,
+  ContactSaveResult,
   ExternalUserId,
   OutboundWebhookEvent,
+  MintDirectConnectTokenRequest,
+  MintDirectConnectTokenResponseBody,
+  SimulateAddressChangeSecurityEventRequest,
+  SimulateAddressChangeSecurityEventResponse,
+  SimulateAddressChangeSecurityEventStatus,
+  SimulateFailedAddressUpdateRequest,
+  SimulateFailedAddressUpdateResponse,
+  ArmIntegrationSimulationRequest,
+  ArmIntegrationSimulationResponse,
+  IntegrationSimulationScenario,
   TenantConnectRequest,
   TenantConnectionResponseBody,
   TenantConnectionStatus,
   TenantDisconnectRequest,
-  TenantId,
   VerifiedWebhookPayload,
 } from "./types.js";
-
-export {
-  contactSyncStateFromError,
-  contactSyncStateFromPrimaryBatch,
-  contactSyncStateFromSaveResult,
-  getPrimaryErrorMessage,
-  isPrimaryClientError,
-  type ContactSyncDisplayState,
-} from "./sync.js";
 
 export { NextAddressClient, type NextAddressClientOptions } from "./client.js";
 export {
   NextAddressError,
   WebhookVerificationError,
 } from "./errors.js";
+export {
+  decodeExternalUserId,
+  encodeExternalUserId,
+  EXTERNAL_USER_ID_PREFIX,
+  isEncodedExternalUserId,
+  type DecodedExternalUserId,
+  type EncodeExternalUserIdInput,
+} from "./external-user-id.js";
 export {
   parseContactWebhookPayload,
   parseWebhookEvent,
@@ -43,3 +54,24 @@ export {
   verifyAndParseWebhook,
   verifyWebhookSignature,
 } from "./webhook.js";
+export {
+  contactSyncStateFromError,
+  contactSyncStateFromPrimaryBatch,
+  contactSyncStateFromSaveResult,
+  getPrimaryErrorMessage,
+  isPrimaryClientError,
+  type ContactSyncDisplayState,
+} from "./sync.js";
+export {
+  INTEGRATION_SIMULATION_SCENARIOS,
+  SCENARIO_CATEGORY_LABELS,
+  SCENARIO_CATEGORY_ORDER,
+  isIntegrationSimulationScenario,
+  isTenantLocalSimulationScenario,
+  scenarioArmHint,
+  scenarioCategory,
+  scenarioDescription,
+  scenarioLabel,
+  scenariosForCategory,
+  type IntegrationSimulationCategory,
+} from "./simulation-scenarios.js";

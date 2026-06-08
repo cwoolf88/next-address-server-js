@@ -38,6 +38,7 @@
   "scripts": {
     "build": "tsc && cp src/embed/widget.css dist/embed/widget.css",
     "prepublishOnly": "npm run build",
+    "sync:demo": "node ./scripts/sync-demo.mjs",
     "typecheck": "tsc --noEmit"
   },
   "keywords": [

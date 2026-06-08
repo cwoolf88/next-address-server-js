@@ -1,9 +1,19 @@
 import { NextAddressError } from "./errors.js";
+import { isIntegrationSimulationScenario } from "./simulation-scenarios.js";
 import type {
+  AddressChangeHoldStatus,
   ContactSaveResult,
   ContactUpdateQueueResponseBody,
   ContactUpdateRequest,
   ContactUpdateResponseBody,
+  MintDirectConnectTokenRequest,
+  MintDirectConnectTokenResponseBody,
+  SimulateAddressChangeSecurityEventRequest,
+  SimulateAddressChangeSecurityEventResponse,
+  ArmIntegrationSimulationRequest,
+  ArmIntegrationSimulationResponse,
+  SimulateFailedAddressUpdateRequest,
+  SimulateFailedAddressUpdateResponse,
   TenantConnectRequest,
   TenantConnectionResponseBody,
   TenantDisconnectRequest,
@@ -115,10 +125,35 @@ export class NextAddressClient {
   }
 
   /**
+   * Mint an opaque connect/disconnect link token for browser flows.
+   * Primary resolves tenant from your API key; the token maps to (tenant, externalUserId) server-side.
+   */
+  async mintDirectConnectToken(
+    body: MintDirectConnectTokenRequest,
+    init?: { path?: string },
+  ): Promise<MintDirectConnectTokenResponseBody> {
+    return this.requestJson(
+      "POST",
+      init?.path ?? "/api/v1/direct-connect-tokens",
+      body,
+      undefined,
+      (parsed) => {
+        if (typeof parsed.linkToken !== "string" || typeof parsed.expiresAt !== "string") {
+          throw new NextAddressError("Response missing linkToken or expiresAt", "BAD_RESPONSE");
+        }
+        return {
+          linkToken: parsed.linkToken,
+          expiresAt: parsed.expiresAt,
+        };
+      },
+    );
+  }
+
+  /**
    * POST tenant connect. Default path `/api/v1/tenants/connect` — change if primary uses another route.
    */
   async connectTenant(
-    body: TenantConnectRequest,
+    body: TenantConnectRequest = {},
     init?: { idempotencyKey?: string; path?: string }
   ): Promise<TenantConnectionResponseBody> {
     return this.requestJson("POST", init?.path ?? "/api/v1/tenants/connect", body, init, (parsed) => ({
@@ -130,10 +165,67 @@ export class NextAddressClient {
   }
 
   /**
+   * Simulate a suspicious-network security event on next-address-primary for the linked user.
+   * Pauses address changes for 24 hours until the user re-verifies their Clerk email.
+   * Primary must allow simulation (non-production or `NEXT_ADDRESS_ALLOW_SIMULATE_SECURITY_HOLD`).
+   */
+  async simulateAddressChangeSecurityEvent(
+    body: SimulateAddressChangeSecurityEventRequest,
+    init?: { path?: string },
+  ): Promise<SimulateAddressChangeSecurityEventResponse> {
+    return this.postJson(
+      init?.path ?? "/api/v1/security/simulate-address-change-hold",
+      body,
+      (parsed) => mapSimulateSecurityEventResponse(parsed),
+    );
+  }
+
+  /**
+   * Arm the next address update to fail from the chosen side (merchant PATCH or NextAddress webhook push).
+   * Primary must allow simulation (non-production or `NEXT_ADDRESS_ALLOW_SIMULATE_SECURITY_HOLD`).
+   */
+  async simulateFailedAddressUpdate(
+    body: SimulateFailedAddressUpdateRequest,
+  ): Promise<SimulateFailedAddressUpdateResponse> {
+    return this.armIntegrationSimulation({
+      externalUserId: body.externalUserId,
+      scenario:
+        body.source === "merchant" ? "sync_failure_merchant" : "sync_failure_nextaddress",
+    }).then((result) => {
+      if (result.status === "applied") {
+        throw new NextAddressError(
+          "Expected armed simulation, got applied security hold",
+          "BAD_RESPONSE",
+        );
+      }
+      return {
+        status: "armed",
+        source: body.source,
+        message: result.message,
+      };
+    });
+  }
+
+  /**
+   * Arm a dev/test scenario (validation errors, sync failures, connectivity issues, etc.).
+   * `security_hold` is applied immediately and returns the active hold.
+   */
+  async armIntegrationSimulation(
+    body: ArmIntegrationSimulationRequest,
+    init?: { path?: string },
+  ): Promise<ArmIntegrationSimulationResponse> {
+    return this.postJson(
+      init?.path ?? "/api/v1/simulate/arm",
+      body,
+      (parsed) => mapArmIntegrationSimulationResponse(parsed),
+    );
+  }
+
+  /**
    * POST tenant disconnect. Default path `/api/v1/tenants/disconnect` — change if primary uses another route.
    */
   async disconnectTenant(
-    body: TenantDisconnectRequest,
+    body: TenantDisconnectRequest = {},
     init?: { idempotencyKey?: string; path?: string }
   ): Promise<TenantConnectionResponseBody> {
     return this.requestJson(
@@ -150,12 +242,21 @@ export class NextAddressClient {
     );
   }
 
+  private async postJson<T>(
+    path: string,
+    body: unknown,
+    mapResponse: (parsed: Record<string, unknown>) => T,
+  ): Promise<T> {
+    return this.requestJson("POST", path, body, undefined, mapResponse, { requireStatus: false });
+  }
+
   private async requestJson<T>(
     method: "PATCH" | "POST",
     path: string,
     body: unknown,
     init: { idempotencyKey?: string } | undefined,
-    mapResponse: (parsed: Record<string, unknown>) => T
+    mapResponse: (parsed: Record<string, unknown>) => T,
+    options?: { requireStatus?: boolean },
   ): Promise<T> {
     const url = `${this.baseUrl}${path.startsWith("/") ? path : `/${path}`}`;
     const controller = new AbortController();
@@ -189,7 +290,11 @@ export class NextAddressClient {
           parsed
         );
       }
-      if (!isRecord(parsed) || typeof parsed.status !== "string") {
+      if (!isRecord(parsed)) {
+        throw new NextAddressError("Response is not a JSON object", "BAD_RESPONSE", res.status, parsed);
+      }
+      const requireStatus = options?.requireStatus ?? true;
+      if (requireStatus && typeof parsed.status !== "string") {
         throw new NextAddressError("Response missing status", "BAD_RESPONSE", res.status, parsed);
       }
       return mapResponse(parsed);
@@ -214,6 +319,85 @@ function toTransportError(e: unknown): NextAddressError {
     return new NextAddressError(e.message, "TRANSPORT_ERROR");
   }
   return new NextAddressError("Request failed", "TRANSPORT_ERROR");
+}
+
+function mapAddressChangeHoldStatus(parsed: Record<string, unknown>): AddressChangeHoldStatus {
+  const hold = parsed.hold;
+  if (!isRecord(hold) || typeof hold.id !== "string") {
+    throw new NextAddressError("Response missing hold", "BAD_RESPONSE", undefined, parsed);
+  }
+  return {
+    id: hold.id,
+    reason: typeof hold.reason === "string" ? hold.reason : "suspicious_network",
+    reasonLabel:
+      typeof hold.reasonLabel === "string" ? hold.reasonLabel : "Suspicious network activity",
+    clientIp: typeof hold.clientIp === "string" ? hold.clientIp : null,
+    clientLocationLabel:
+      typeof hold.clientLocationLabel === "string" ? hold.clientLocationLabel : null,
+    pausedUntil: typeof hold.pausedUntil === "string" ? hold.pausedUntil : new Date().toISOString(),
+    reverifiedAt: typeof hold.reverifiedAt === "string" ? hold.reverifiedAt : null,
+    isBlocking: hold.isBlocking !== false,
+    requiresReverification: hold.requiresReverification !== false,
+    waitingForCooldown: hold.waitingForCooldown === true,
+    tenantId: typeof hold.tenantId === "string" ? hold.tenantId : null,
+    contactQueueId: typeof hold.contactQueueId === "string" ? hold.contactQueueId : null,
+  };
+}
+
+function mapArmIntegrationSimulationResponse(
+  parsed: Record<string, unknown>,
+): ArmIntegrationSimulationResponse {
+  const status = parsed.status;
+  if (status === "applied") {
+    if (parsed.scenario !== "security_hold") {
+      throw new NextAddressError("Unexpected applied scenario", "BAD_RESPONSE", undefined, parsed);
+    }
+    return {
+      status: "applied",
+      scenario: "security_hold",
+      message: typeof parsed.message === "string" ? parsed.message : "",
+      hold: mapAddressChangeHoldStatus(parsed),
+    };
+  }
+  if (status !== "armed") {
+    throw new NextAddressError("Response missing status", "BAD_RESPONSE", undefined, parsed);
+  }
+  const scenario = parsed.scenario;
+  if (!isIntegrationSimulationScenario(scenario)) {
+    throw new NextAddressError("Response missing scenario", "BAD_RESPONSE", undefined, parsed);
+  }
+  return {
+    status: "armed",
+    scenario,
+    message:
+      typeof parsed.message === "string"
+        ? parsed.message
+        : "Simulation armed for the next integration action.",
+    hint:
+      typeof parsed.hint === "string"
+        ? parsed.hint
+        : "Trigger the scenario with the next relevant user action.",
+  };
+}
+
+function mapSimulateSecurityEventResponse(
+  parsed: Record<string, unknown>,
+): SimulateAddressChangeSecurityEventResponse {
+  const status = parsed.status;
+  if (status !== "hold_created" && status !== "already_paused") {
+    throw new NextAddressError("Response missing status", "BAD_RESPONSE", undefined, parsed);
+  }
+  const code = parsed.code;
+  if (code !== "address_changes_paused" && code !== "suspicious_ip_hold_created") {
+    throw new NextAddressError("Response missing code", "BAD_RESPONSE", undefined, parsed);
+  }
+  const message = typeof parsed.message === "string" ? parsed.message : "";
+  return {
+    status,
+    code,
+    message,
+    hold: mapAddressChangeHoldStatus(parsed),
+  };
 }
 
 function isQueueableContactUpdateError(error: NextAddressError): boolean {

@@ -57,14 +57,10 @@ const KINDS = new Set(["address", "phone", "name", "email"]);
 
 function parseBaseFields(data: Record<string, unknown>): {
   occurredAt: string;
-  tenantId: string;
   externalUserId: string;
   kind: ContactChangeWebhookEvent["kind"];
   correlationId: string | undefined;
 } {
-  if (typeof data.tenantId !== "string" || data.tenantId.length === 0) {
-    throw new WebhookVerificationError("Missing tenantId");
-  }
   if (typeof data.externalUserId !== "string" || data.externalUserId.length === 0) {
     throw new WebhookVerificationError("Missing externalUserId");
   }
@@ -77,7 +73,6 @@ function parseBaseFields(data: Record<string, unknown>): {
   }
   return {
     occurredAt: data.occurredAt,
-    tenantId: data.tenantId,
     externalUserId: data.externalUserId,
     kind: kind as ContactChangeWebhookEvent["kind"],
     correlationId: typeof data.correlationId === "string" ? data.correlationId : undefined,
@@ -106,7 +101,6 @@ export function parseContactWebhookPayload(json: string): VerifiedWebhookPayload
   const out: ContactChangeWebhookEvent = {
     event: "contact.changed",
     occurredAt: base.occurredAt,
-    tenantId: base.tenantId,
     externalUserId: base.externalUserId,
     kind: base.kind,
     correlationId: base.correlationId,
@@ -145,7 +139,6 @@ export function parseWebhookEvent(json: string): OutboundWebhookEvent {
     const out: ContactUpdateReviewedEvent = {
       event: "contact.update.reviewed",
       occurredAt: base.occurredAt,
-      tenantId: base.tenantId,
       externalUserId: base.externalUserId,
       kind: base.kind,
       status: data.status,

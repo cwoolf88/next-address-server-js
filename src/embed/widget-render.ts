@@ -1,11 +1,19 @@
 import type { ContactSyncDisplayState } from "../sync.js";
-import type { WidgetConnectionView } from "./types.js";
+import {
+  connectionStatusTooltip,
+  connectionSubtitle,
+  disconnectButtonLabel,
+  sessionPollRefreshLabel,
+  settingsButtonLabel,
+} from "./connection-copy.js";
+import type { SessionPollState, WidgetConnectionView } from "./types.js";
+import { shouldShowSessionPollRefresh } from "./integration.js";
 
 export type ConnectionWidgetActions = {
-  onSignIn: () => void;
-  onConnect: () => void;
+  onConnectAccount: () => void;
   onDisconnect: () => void;
   onOpenSettings: () => void;
+  onRetryConnectSession?: () => void;
 };
 
 export type SyncWidgetActions = {
@@ -40,7 +48,7 @@ function renderConnectionGhost(section: HTMLElement): void {
   copy.appendChild(ghostLine("na-widget__ghost-line--title"));
   copy.appendChild(ghostLine("na-widget__ghost-line--subtitle"));
   top.appendChild(copy);
-  const slot = el("div", "na-widget__link-status-slot");
+  const slot = el("div", "na-widget__connection-status-slot");
   slot.appendChild(el("div", "na-widget__ghost-icon"));
   top.appendChild(slot);
   header.appendChild(top);
@@ -57,37 +65,12 @@ function renderConnectionGhost(section: HTMLElement): void {
   section.appendChild(sr);
 }
 
-function connectionSubtitle(view: WidgetConnectionView, tenantName: string): string {
-  const app = tenantName || "your app";
-  if (view.linked) {
-    return `Contact updates from ${app} sync through your shared NextAddress profile.`;
-  }
-  if (view.signedIntoPrimary) {
-    return `Link ${app} to keep your address and contact info in sync across partners.`;
-  }
-  return `One address profile for everywhere you shop—sign in to link ${app}.`;
-}
-
-function linkStatusTooltip(view: WidgetConnectionView, mockMode: boolean): string {
-  if (view.statusLoading) {
-    return "Checking link status with NextAddress…";
-  }
-  if (view.linked) {
-    return mockMode
-      ? "Linked (mock). Changes you save sync to your NextAddress profile."
-      : "Linked. Changes you save in this app sync to your NextAddress profile.";
-  }
-  return mockMode
-    ? "Not linked (mock). Connect to sync contact and address updates."
-    : "Not linked. Connect to send contact and address updates to NextAddress.";
-}
-
 function svgEl<K extends keyof SVGElementTagNameMap>(tag: K): SVGElementTagNameMap[K] {
   return document.createElementNS("http://www.w3.org/2000/svg", tag);
 }
 
 function strokeIcon(attrs: Record<string, string>): SVGElement {
-  const node = svgEl(attrs.tag as "path" | "circle" | "line");
+  const node = svgEl(attrs.tag as "path" | "circle" | "line" | "polyline");
   for (const [key, value] of Object.entries(attrs)) {
     if (key !== "tag") {
       node.setAttribute(key, value);
@@ -101,7 +84,7 @@ function strokeIcon(attrs: Record<string, string>): SVGElement {
   return node;
 }
 
-/** Checkmark — color from parent (success when linked, muted when not). */
+/** Checkmark — color from parent (success when connected, muted when not). */
 function appendCheckmarkIcon(svg: SVGSVGElement): void {
   const check = strokeIcon({
     tag: "path",
@@ -133,21 +116,52 @@ function appendSettingsButton(
   view: WidgetConnectionView,
   onOpenSettings: () => void
 ): void {
-  const signedIn = view.signedIntoPrimary;
-  const label = signedIn
-    ? "Manage your addresses in NextAddress"
-    : "Sign in to manage your addresses in NextAddress";
+  if (!view.signedIntoPrimary) return;
+
+  const label = settingsButtonLabel(true);
   const btn = el("button", "na-widget__settings-btn");
   btn.type = "button";
   btn.setAttribute("aria-label", label);
   btn.title = label;
-  btn.disabled = !signedIn || view.statusLoading;
+  btn.disabled = view.statusLoading;
 
-  const svg = createLinkStatusSvg(16);
+  const svg = createConnectionStatusSvg(16);
   svg.setAttribute("class", "na-widget__settings-icon");
   appendSettingsGearIcon(svg);
   btn.appendChild(svg);
   btn.addEventListener("click", onOpenSettings);
+  container.appendChild(btn);
+}
+
+function appendRefreshIcon(svg: SVGSVGElement): void {
+  const path = strokeIcon({
+    tag: "path",
+    d: "M21 12a9 9 0 1 1-2.64-6.36",
+  });
+  svg.append(path);
+  const head = strokeIcon({
+    tag: "polyline",
+    points: "21 3 21 9 15 9",
+  });
+  svg.append(head);
+}
+
+function appendSessionPollRefreshButton(
+  container: HTMLElement,
+  poll: SessionPollState,
+  onRetry: () => void
+): void {
+  const label = sessionPollRefreshLabel(poll.phase);
+  const btn = el("button", "na-widget__session-refresh-btn");
+  btn.type = "button";
+  btn.setAttribute("aria-label", label);
+  btn.title = label;
+
+  const svg = createConnectionStatusSvg(16);
+  svg.setAttribute("class", "na-widget__session-refresh-icon");
+  appendRefreshIcon(svg);
+  btn.appendChild(svg);
+  btn.addEventListener("click", onRetry);
   container.appendChild(btn);
 }
 
@@ -197,13 +211,13 @@ function appendLoadingPulse(svg: SVGSVGElement): void {
   svg.appendChild(defs);
 
   const ripples = svgEl("g");
-  ripples.setAttribute("class", "na-widget__link-status-ripples");
+  ripples.setAttribute("class", "na-widget__connection-status-ripples");
   ripples.setAttribute("clip-path", `url(#${clipId})`);
 
   for (let i = 0; i < LOADING_RIPPLE_COUNT; i++) {
     const begin = `${((i * LOADING_RIPPLE_DUR_S) / LOADING_RIPPLE_COUNT).toFixed(2)}s`;
     const circle = svgEl("circle");
-    circle.setAttribute("class", "na-widget__link-status-ripple");
+    circle.setAttribute("class", "na-widget__connection-status-ripple");
     circle.setAttribute("cx", "12");
     circle.setAttribute("cy", "12");
     circle.setAttribute("r", "0.5");
@@ -214,16 +228,16 @@ function appendLoadingPulse(svg: SVGSVGElement): void {
   svg.appendChild(ripples);
 
   const hub = svgEl("circle");
-  hub.setAttribute("class", "na-widget__link-status-ripple-hub");
+  hub.setAttribute("class", "na-widget__connection-status-ripple-hub");
   hub.setAttribute("cx", "12");
   hub.setAttribute("cy", "12");
   hub.setAttribute("r", "1.25");
   svg.appendChild(hub);
 }
 
-function createLinkStatusSvg(sizePx: number): SVGSVGElement {
+function createConnectionStatusSvg(sizePx: number): SVGSVGElement {
   const svg = svgEl("svg");
-  svg.setAttribute("class", "na-widget__link-status-icon");
+  svg.setAttribute("class", "na-widget__connection-status-icon");
   svg.setAttribute("width", String(sizePx));
   svg.setAttribute("height", String(sizePx));
   svg.setAttribute("viewBox", "0 0 24 24");
@@ -231,26 +245,28 @@ function createLinkStatusSvg(sizePx: number): SVGSVGElement {
   return svg;
 }
 
-function appendLinkStatusIcon(
+function appendConnectionStatusIcon(
   slot: HTMLElement,
   view: WidgetConnectionView,
   mockMode: boolean
 ): void {
-  const linked = view.linked;
-  const tooltip = linkStatusTooltip(view, mockMode);
-  const status = el("span", "na-widget__link-status");
+  const connected = view.connected;
+  const tooltip = connectionStatusTooltip(view, mockMode);
+  const status = el("span", "na-widget__connection-status");
   status.tabIndex = 0;
   status.setAttribute("role", "status");
   status.setAttribute("data-na-tooltip", tooltip);
   status.setAttribute("aria-label", tooltip);
 
-  const svg = createLinkStatusSvg(16);
+  const svg = createConnectionStatusSvg(16);
 
   if (view.statusLoading) {
-    status.classList.add("na-widget__link-status--loading");
+    status.classList.add("na-widget__connection-status--loading");
     appendLoadingPulse(svg);
   } else {
-    status.classList.add(linked ? "na-widget__link-status--linked" : "na-widget__link-status--unlinked");
+    status.classList.add(
+      connected ? "na-widget__connection-status--connected" : "na-widget__connection-status--disconnected"
+    );
     appendCheckmarkIcon(svg);
   }
 
@@ -262,7 +278,8 @@ export function renderConnectionSection(
   host: HTMLElement,
   view: WidgetConnectionView,
   tenantName: string,
-  actions: ConnectionWidgetActions
+  actions: ConnectionWidgetActions,
+  sessionPoll: SessionPollState = { active: false, timedOut: false, phase: null }
 ): void {
   const section = el("section", "na-widget na-widget__connection");
   section.setAttribute("aria-label", "NextAddress");
@@ -276,10 +293,13 @@ export function renderConnectionSection(
   section.removeAttribute("aria-busy");
 
   if (!view.info) {
-    section.appendChild(
-      el("p", "na-widget__error", view.error ?? "Tenant connection unavailable.")
+    const unavailable = el("section", "na-widget__connection-unavailable");
+    unavailable.setAttribute("aria-label", "NextAddress");
+    unavailable.setAttribute("role", "alert");
+    unavailable.appendChild(
+      el("p", undefined, view.error ?? "Tenant connection unavailable.")
     );
-    host.replaceChildren(section);
+    host.replaceChildren(unavailable);
     return;
   }
 
@@ -291,9 +311,21 @@ export function renderConnectionSection(
   copy.appendChild(el("p", "na-widget__subtitle", connectionSubtitle(view, tenantName)));
   top.appendChild(copy);
 
-  const linkSlot = el("div", "na-widget__link-status-slot");
-  appendLinkStatusIcon(linkSlot, view, info.mockMode);
-  top.appendChild(linkSlot);
+  const headerActions = el("div", "na-widget__header-actions");
+  const connectionSlot = el("div", "na-widget__connection-status-slot");
+  appendConnectionStatusIcon(connectionSlot, view, info.mockMode);
+  headerActions.appendChild(connectionSlot);
+  if (
+    shouldShowSessionPollRefresh(view, sessionPoll) &&
+    actions.onRetryConnectSession
+  ) {
+    appendSessionPollRefreshButton(
+      headerActions,
+      sessionPoll,
+      actions.onRetryConnectSession
+    );
+  }
+  top.appendChild(headerActions);
   header.appendChild(top);
 
   if (!info.mockMode && view.signedIntoPrimary) {
@@ -313,26 +345,23 @@ export function renderConnectionSection(
   const footer = el("div", "na-widget__footer");
   const actionsRow = el("div", "na-widget__actions");
 
-  if (view.linked) {
-    const btn = el("button", "na-widget__btn na-widget__btn--secondary", "Unlink account");
+  if (view.connected) {
+    const btn = el("button", "na-widget__btn na-widget__btn--secondary", "Disconnect account");
     btn.type = "button";
     btn.disabled = !info.disconnectUrl || (!view.signedIntoPrimary && !info.disconnectSignInUrl);
     if (!view.signedIntoPrimary && info.disconnectSignInUrl) {
-      btn.textContent = "Sign in to unlink";
+      btn.textContent = disconnectButtonLabel(false, true);
     }
     btn.addEventListener("click", actions.onDisconnect);
     actionsRow.appendChild(btn);
-  } else if (view.signedIntoPrimary) {
-    const btn = el("button", "na-widget__btn na-widget__btn--primary", "Link account");
-    btn.type = "button";
-    btn.disabled = !info.connectUrl || view.statusLoading;
-    btn.addEventListener("click", actions.onConnect);
-    actionsRow.appendChild(btn);
   } else {
-    const btn = el("button", "na-widget__btn na-widget__btn--primary", "Sign in");
+    const btn = el("button", "na-widget__btn na-widget__btn--primary", "Connect account");
     btn.type = "button";
-    btn.disabled = !info.connectSignInUrl || view.statusLoading;
-    btn.addEventListener("click", actions.onSignIn);
+    const canConnect = view.signedIntoPrimary
+      ? !!info.connectUrl
+      : !!info.connectSignInUrl;
+    btn.disabled = !canConnect || view.statusLoading;
+    btn.addEventListener("click", actions.onConnectAccount);
     actionsRow.appendChild(btn);
     if (!info.connectSignInUrl) {
       const hint = el(
@@ -432,10 +461,17 @@ export function renderWidget(
   tenantName: string,
   connectionActions: ConnectionWidgetActions,
   syncState: ContactSyncDisplayState | null,
-  syncActions: SyncWidgetActions
+  syncActions: SyncWidgetActions,
+  sessionPoll: SessionPollState = { active: false, timedOut: false, phase: null }
 ): void {
   const connectionRoot = el("div");
-  renderConnectionSection(connectionRoot, connection, tenantName, connectionActions);
+  renderConnectionSection(
+    connectionRoot,
+    connection,
+    tenantName,
+    connectionActions,
+    sessionPoll
+  );
   const connectionSection = connectionRoot.firstElementChild as HTMLElement | null;
 
   if (syncState == null) {
